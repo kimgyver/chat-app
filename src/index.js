@@ -2,6 +2,11 @@ const path = require('path');
 const http = require('http');
 const express = require('express');
 const socketio = require('socket.io');
+const Filter = require('bad-words');
+const {
+  generateMessage,
+  generateLocationMessage,
+} = require('./utils/messages');
 
 const app = express();
 const server = http.createServer(app);
@@ -17,20 +22,42 @@ let count = 0;
 io.on('connection', (socket) => {
   console.log('New WebSocket connection');
 
-  socket.emit('message', 'Welcome!');
+  socket.on('join', ({ username, room }) => {
+    socket.join(room);
 
-  socket.on('sendMessageToAll', (message) => {
-    io.emit('message', message);
+    socket.emit('message', generateMessage('Welcome!'));
+    socket.broadcast
+      .to(room)
+      .emit('message', generateMessage(`${username} has joined!`));
+
+    // socket.emit(specific user)
+    // io.emit (to all users). socket.broadcast.emit (to all users except oneself)
+    // io.to.emit (to all users in specific room), socket.to.emit (to all users in specific room except oneself)
   });
 
-  //   socket.emit('countUpdated', count); // only to client triggering 'connection'
+  socket.on('sendMessageToAll', (message, callback) => {
+    const filter = new Filter();
+    if (filter.isProfane(message)) {
+      return callback('Profanity is not allowed!');
+    }
 
-  //   socket.on('increment', () => {
-  //     console.log('INCREMENT recieved');
-  //     count++;
-  //     //socket.emit('countUpdated', count); // only to client triggering 'increment'
-  //     io.emit('countUpdated', count); // to all client
-  //   });
+    io.to('CBD').emit('message', generateMessage(message));
+    callback();
+  });
+
+  socket.on('sendLocation', (location, callback) => {
+    io.emit(
+      'locationMessage',
+      generateLocationMessage(
+        `https://google.com/maps?q=${location.latitude},${location.longitude}`
+      )
+    );
+    callback();
+  });
+
+  socket.on('disconnect', () => {
+    io.emit('message', generateMessage('A user has left!'));
+  });
 });
 
 server.listen(port, () => {
